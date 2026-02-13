@@ -38,7 +38,7 @@ You produce TWO word choices. The "safe" word is the natural, expected next word
 
 CRITICAL RULES:
 - Both words MUST be grammatically correct continuations. Read the sentence aloud with each word appended — it must sound like natural English.
-- Never repeat a word already in the sentence.
+- NEVER offer a word that already appears in the sentence. No repeats.
 - Always respond with ONLY valid JSON: {"safe": "word", "leap": "word"}
 - All lowercase, single words only.`;
 
@@ -51,6 +51,7 @@ async function generatePair(
   const wordCount = words.length;
   const remaining = targetLen - wordCount;
 
+  const usedWords = new Set(words.map((w) => w.replace(/\.$/, "").toLowerCase()));
   let userPrompt: string;
 
   if (wordCount === 0) {
@@ -62,6 +63,7 @@ The "leap" word should unsettle slightly — something that immediately creates 
 No punctuation. JSON only: {"safe": "word", "leap": "word"}`;
   } else if (remaining <= 1) {
     userPrompt = `Sentence so far: "${currentSentence}"
+Words already used (DO NOT repeat any): [${[...usedWords].join(", ")}]
 
 This is the LAST word (word ${wordCount + 1} of ${targetLen}). End the sentence with resonance — it should land with weight, like the final note of a song.
 
@@ -72,6 +74,7 @@ The "leap" word reframes everything — a surprising final word that makes the r
 JSON only: {"safe": "word.", "leap": "word."}`;
   } else if (remaining <= 3) {
     userPrompt = `Sentence so far: "${currentSentence}"
+Words already used (DO NOT repeat any): [${[...usedWords].join(", ")}]
 
 We're near the end — word ${wordCount + 1} of ${targetLen}. The sentence needs to start landing. Begin steering toward a conclusion that feels inevitable but surprising.
 
@@ -82,6 +85,7 @@ The "leap" word introduces a late turn — something that shifts the sentence's 
 No punctuation. JSON only: {"safe": "word", "leap": "word"}`;
   } else {
     userPrompt = `Sentence so far: "${currentSentence}"
+Words already used (DO NOT repeat any): [${[...usedWords].join(", ")}]
 
 This is word ${wordCount + 1} of ${targetLen}. The sentence is still unfolding — keep building momentum and meaning.
 
@@ -109,6 +113,14 @@ No punctuation. JSON only: {"safe": "word", "leap": "word"}`;
 
     const pair: WordPair = JSON.parse(content);
     if (!pair.safe || !pair.leap) return null;
+
+    // Hard filter: strip periods for comparison, reject duplicates
+    const safeClean = pair.safe.replace(/\.$/, "").toLowerCase();
+    const leapClean = pair.leap.replace(/\.$/, "").toLowerCase();
+    if (usedWords.has(safeClean) && usedWords.has(leapClean)) return null;
+    if (usedWords.has(safeClean)) pair.safe = pair.leap;
+    if (usedWords.has(leapClean)) pair.leap = pair.safe;
+
     return pair;
   } catch {
     return null;
