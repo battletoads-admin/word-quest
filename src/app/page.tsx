@@ -23,68 +23,83 @@ function getGroqClient(apiKey: string) {
   });
 }
 
+const SYSTEM_PROMPT = `You are a poet's subconscious. You help build single sentences — one word at a time — that feel like quiet revelations. Each sentence should read like a line from a poem someone almost remembered.
+
+The kinds of sentences you help create:
+- "the morning forgot itself and became something like forgiveness."
+- "we carried the silence between us like an undelivered letter."
+- "somewhere a door is closing that was never really open."
+- "even the rain seemed to hesitate before touching the ground."
+- "she kept the word folded inside her coat like a secret."
+- "nothing was missing except the feeling that nothing was missing."
+- "the trees remembered a wind that hadn't arrived yet."
+
+You produce TWO word choices. The "safe" word is the natural, expected next word — what a reader would predict. The "leap" word is stranger, more poetic, more alive — it pulls the sentence somewhere unexpected but still grammatically sound.
+
+CRITICAL RULES:
+- Both words MUST be grammatically correct continuations. Read the sentence aloud with each word appended — it must sound like natural English.
+- Never repeat a word already in the sentence.
+- Always respond with ONLY valid JSON: {"safe": "word", "leap": "word"}
+- All lowercase, single words only.`;
+
 async function generatePair(
   groq: Groq,
   words: string[],
-  position: string
+  targetLen: number
 ): Promise<WordPair | null> {
   const currentSentence = words.join(" ");
   const wordCount = words.length;
-  const targetLength = position === "first" ? 10 : Math.max(0, 10 - wordCount);
+  const remaining = targetLen - wordCount;
 
-  let prompt: string;
+  let userPrompt: string;
 
-  if (position === "first") {
-    prompt = `You are helping create a poetic sentence, one word at a time. The user will choose between two opening words.
+  if (wordCount === 0) {
+    userPrompt = `Generate two opening words for a new sentence (it will be ${targetLen} words long).
 
-Generate two possible FIRST words for a poetic sentence (8-12 words long).
+The "safe" word should ground the reader — a warm, familiar opening (like: the, sometimes, we, morning, even, she, there, after, once).
+The "leap" word should unsettle slightly — something that immediately creates tension or mystery (like: beneath, almost, forgetting, nowhere, unraveling, somebody, whatever).
 
-Rules:
-- One word should feel "safe" — familiar, grounding, gentle (like: "the", "sometimes", "morning", "we", "there")
-- One word should feel like a "leap" — unexpected, evocative, slightly strange (like: "beneath", "unraveling", "almost", "forgetting", "elsewhere")
-- Both must work as valid opening words of a sentence
-- Lowercase only
-- Single words only, no punctuation
+No punctuation. JSON only: {"safe": "word", "leap": "word"}`;
+  } else if (remaining <= 1) {
+    userPrompt = `Sentence so far: "${currentSentence}"
 
-Respond with ONLY valid JSON: {"safe": "word", "leap": "word"}`;
-  } else if (targetLength <= 2) {
-    prompt = `You are helping create a poetic sentence, one word at a time.
+This is the LAST word (word ${wordCount + 1} of ${targetLen}). End the sentence with resonance — it should land with weight, like the final note of a song.
 
-The sentence so far: "${currentSentence}"
+Both words MUST complete the sentence grammatically. Add a period after each word.
+The "safe" word closes the thought naturally.
+The "leap" word reframes everything — a surprising final word that makes the reader re-read the whole sentence.
 
-This is near the END of the sentence (${wordCount} words so far, aiming for 8-12 total). Generate two possible NEXT words that could gracefully END or NEARLY END this sentence.
+JSON only: {"safe": "word.", "leap": "word."}`;
+  } else if (remaining <= 3) {
+    userPrompt = `Sentence so far: "${currentSentence}"
 
-Rules:
-- One word should feel "safe" — a natural, expected ending
-- One word should feel like a "leap" — a surprising, haunting, or unusual ending
-- Both must be grammatically valid continuations
-- Think about creating a complete, resonant poetic thought
-- Lowercase only, single words only
-- If the word would end the sentence, add a period after it
+We're near the end — word ${wordCount + 1} of ${targetLen}. The sentence needs to start landing. Begin steering toward a conclusion that feels inevitable but surprising.
 
-Respond with ONLY valid JSON: {"safe": "word", "leap": "word"}`;
+Both words must be grammatically valid continuations.
+The "safe" word moves toward a natural closing.
+The "leap" word introduces a late turn — something that shifts the sentence's meaning just before it ends.
+
+No punctuation. JSON only: {"safe": "word", "leap": "word"}`;
   } else {
-    prompt = `You are helping create a poetic sentence, one word at a time.
+    userPrompt = `Sentence so far: "${currentSentence}"
 
-The sentence so far: "${currentSentence}"
+This is word ${wordCount + 1} of ${targetLen}. The sentence is still unfolding — keep building momentum and meaning.
 
-Generate two possible NEXT words to continue this sentence. The sentence will be ${wordCount + targetLength} words total, and we're at word ${wordCount + 1}.
+Both words must be grammatically valid continuations that a fluent English speaker would accept.
+The "safe" word continues the sentence's natural trajectory — what the reader expects next.
+The "leap" word bends the sentence in an unexpected direction while remaining grammatical — a more vivid, strange, or emotionally charged choice.
 
-Rules:
-- One word should feel "safe" — the expected, natural continuation
-- One word should feel like a "leap" — unexpected, poetic, slightly destabilizing
-- Both MUST be grammatically valid continuations of the existing sentence
-- Think about rhythm and sound, not just meaning
-- Lowercase only, single words only, no punctuation
-
-Respond with ONLY valid JSON: {"safe": "word", "leap": "word"}`;
+No punctuation. JSON only: {"safe": "word", "leap": "word"}`;
   }
 
   try {
     const completion = await groq.chat.completions.create({
       model: "llama-3.3-70b-versatile",
-      messages: [{ role: "user", content: prompt }],
-      temperature: 0.9,
+      messages: [
+        { role: "system", content: SYSTEM_PROMPT },
+        { role: "user", content: userPrompt },
+      ],
+      temperature: 0.7,
       max_tokens: 60,
       response_format: { type: "json_object" },
     });
@@ -128,13 +143,9 @@ export default function Home() {
   const fetchPair = useCallback(
     async (currentWords: string[]): Promise<WordPair | null> => {
       if (!groqRef.current) return null;
-      return generatePair(
-        groqRef.current,
-        currentWords,
-        currentWords.length === 0 ? "first" : "middle"
-      );
+      return generatePair(groqRef.current, currentWords, targetLength);
     },
-    []
+    [targetLength]
   );
 
   // Prefetch the next pair while user hesitates
